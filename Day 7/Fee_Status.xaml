@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Activity mc:Ignorable="sap2010" x:Class="FeeStatusTracker"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:mca="clr-namespace:System.Activities.Statements;assembly=System.Activities"
+ xmlns:mva="clr-namespace:Microsoft.VisualBasic.Activities;assembly=System.Activities"
+ xmlns:s="clr-namespace:System;assembly=mscorlib"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:scg="clr-namespace:System.Collections.Generic;assembly=mscorlib"
+ xmlns:sd="clr-namespace:System.Data;assembly=System.Data"
+ xmlns:srs="clr-namespace:System.Text.RegularExpressions;assembly=System"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <x:Members>
+    <x:Property Name="in_PDFPath" Type="InArgument(s:String)" />
+    <x:Property Name="in_OutputExcelPath" Type="InArgument(s:String)" />
+    <x:Property Name="out_PendingCount" Type="OutArgument(s:Int32)" />
+  </x:Members>
+
+  <TextExpression.NamespacesForImplementation>
+    <scg:List x:TypeArguments="x:String">
+      <x:String>System</x:String>
+      <x:String>System.Data</x:String>
+      <x:String>System.Linq</x:String>
+      <x:String>System.Text.RegularExpressions</x:String>
+      <x:String>System.Collections.Generic</x:String>
+    </scg:List>
+  </TextExpression.NamespacesForImplementation>
+
+  <mca:Sequence DisplayName="Fee Status Tracker - Main">
+    <mca:Sequence.Variables>
+      <Variable x:TypeArguments="s:String" Name="PDFText" />
+      <Variable x:TypeArguments="sd:DataTable" Name="dtFeeDetails" />
+      <Variable x:TypeArguments="sd:DataTable" Name="dtPendingList" />
+      <Variable x:TypeArguments="scg:IEnumerable(srs:Match)" Name="RecordMatches" />
+      <Variable x:TypeArguments="srs:Match" Name="CurrentMatch" />
+    </mca:Sequence.Variables>
+
+    <!-- STEP 1: Read the PDF text. If your PDF is scanned/image-based, swap
+         this for "Read PDF Text with OCR" (UiPath.PDF.Activities + an OCR engine). -->
+    <ui:ReadPDFText DisplayName="Read Fee PDF" FilePath="[in_PDFPath]" Text="[PDFText]" />
+
+    <!-- STEP 2: Build the fee details DataTable schema. -->
+    <mca:Assign DisplayName="Initialize DataTables">
+      <mca:Assign.To>
+        <OutArgument x:TypeArguments="sd:DataTable">[dtFeeDetails]</OutArgument>
+      </mca:Assign.To>
+      <mca:Assign.Value>
+        <InArgument x:TypeArguments="sd:DataTable">
+          <mva:VisualBasicValue x:TypeArguments="sd:DataTable">
+            <mva:VisualBasicValue.ExpressionText>
+              New DataTable("FeeDetails")
+            </mva:VisualBasicValue.ExpressionText>
+          </mva:VisualBasicValue>
+        </InArgument>
+      </mca:Assign.Value>
+    </mca:Assign>
+
+    <ui:MultipleAssign DisplayName="Add Columns">
+      <ui:MultipleAssign.Assignments>
+        <ui:AssignOperation DisplayName="StudentName Col">
+          <ui:AssignOperation.Value>
+            <InArgument x:TypeArguments="x:Object">dtFeeDetails.Columns.Add("StudentName")</InArgument>
+          </ui:AssignOperation.Value>
+        </ui:AssignOperation>
+        <ui:AssignOperation DisplayName="RollNo Col">
+          <ui:AssignOperation.Value>
+            <InArgument x:TypeArguments="x:Object">dtFeeDetails.Columns.Add("RollNo")</InArgument>
+          </ui:AssignOperation.Value>
+        </ui:AssignOperation>
+        <ui:AssignOperation DisplayName="Amount Col">
+          <ui:AssignOperation.Value>
+            <InArgument x:TypeArguments="x:Object">dtFeeDetails.Columns.Add("Amount")</InArgument>
+          </ui:AssignOperation.Value>
+        </ui:AssignOperation>
+        <ui:AssignOperation DisplayName="DueDate Col">
+          <ui:AssignOperation.Value>
+            <InArgument x:TypeArguments="x:Object">dtFeeDetails.Columns.Add("DueDate")</InArgument>
+          </ui:AssignOperation.Value>
+        </ui:AssignOperation>
+        <ui:AssignOperation DisplayName="Status Col">
+          <ui:AssignOperation.Value>
+            <InArgument x:TypeArguments="x:Object">dtFeeDetails.Columns.Add("Status")</InArgument>
+          </ui:AssignOperation.Value>
+        </ui:AssignOperation>
+      </ui:MultipleAssign.Assignments>
+    </ui:MultipleAssign>
+
+    <!-- STEP 3: Regex-extract each fee record line.
+         ASSUMPTION: each record is one line like:
+         "John Doe | 21CS045 | 15000 | 2026-09-30 | Pending"
+         Adjust the pattern to your real PDF layout. -->
+    <mca:Assign DisplayName="Match Fee Records">
+      <mca:Assign.To>
+        <OutArgument x:TypeArguments="scg:IEnumerable(srs:Match)">[RecordMatches]</OutArgument>
+      </mca:Assign.To>
+      <mca:Assign.Value>
+        <InArgument x:TypeArguments="scg:IEnumerable(srs:Match)">
+          <mva:VisualBasicValue x:TypeArguments="scg:IEnumerable(srs:Match)">
+            <mva:VisualBasicValue.ExpressionText>
+              Regex.Matches(PDFText, "(?&lt;name&gt;.+?)\|(?&lt;roll&gt;.+?)\|(?&lt;amount&gt;.+?)\|(?&lt;due&gt;.+?)\|(?&lt;status&gt;Paid|Pending)").Cast(Of Match)()
+            </mva:VisualBasicValue.ExpressionText>
+          </mva:VisualBasicValue>
+        </InArgument>
+      </mca:Assign.Value>
+    </mca:Assign>
+
+    <mca:ForEach x:TypeArguments="srs:Match" DisplayName="For Each Record" Values="[RecordMatches]">
+      <ActivityAction x:TypeArguments="srs:Match">
+        <ActivityAction.Argument>
+          <DelegateInArgument x:TypeArguments="srs:Match" Name="CurrentMatch" />
+        </ActivityAction.Argument>
+        <mca:Sequence DisplayName="Process Record">
+          <mca:InvokeMethod DisplayName="Add Row To DataTable" MethodName="Rows.Add" TargetType="sd:DataTable">
+            <mca:InvokeMethod.TargetObject>
+              <InArgument x:TypeArguments="sd:DataTable">[dtFeeDetails]</InArgument>
+            </mca:InvokeMethod.TargetObject>
+            <InArgument x:TypeArguments="x:Object">[CurrentMatch.Groups("name").Value.Trim]</InArgument>
+            <InArgument x:TypeArguments="x:Object">[CurrentMatch.Groups("roll").Value.Trim]</InArgument>
+            <InArgument x:TypeArguments="x:Object">[CurrentMatch.Groups("amount").Value.Trim]</InArgument>
+            <InArgument x:TypeArguments="x:Object">[CurrentMatch.Groups("due").Value.Trim]</InArgument>
+            <InArgument x:TypeArguments="x:Object">[CurrentMatch.Groups("status").Value.Trim]</InArgument>
+          </mca:InvokeMethod>
+        </mca:Sequence>
+      </ActivityAction>
+    </mca:ForEach>
+
+    <!-- STEP 4: Filter to build the Pending list -->
+    <mca:Assign DisplayName="Build Pending List">
+      <mca:Assign.To>
+        <OutArgument x:TypeArguments="sd:DataTable">[dtPendingList]</OutArgument>
+      </mca:Assign.To>
+      <mca:Assign.Value>
+        <InArgument x:TypeArguments="sd:DataTable">
+          <mva:VisualBasicValue x:TypeArguments="sd:DataTable">
+            <mva:VisualBasicValue.ExpressionText>
+              dtFeeDetails.Select("Status = 'Pending'").CopyToDataTable()
+            </mva:VisualBasicValue.ExpressionText>
+          </mva:VisualBasicValue>
+        </InArgument>
+      </mca:Assign.Value>
+    </mca:Assign>
+
+    <!-- STEP 5: Write pending list to Excel -->
+    <ui:WriteRangeX DisplayName="Write Pending List To Excel"
+                     WorkbookPath="[in_OutputExcelPath]"
+                     SheetName="PendingList"
+                     StartingCell="A1"
+                     DataTable="[dtPendingList]"
+                     AddHeaders="True" />
+
+    <mca:Assign DisplayName="Set Pending Count">
+      <mca:Assign.To>
+        <OutArgument x:TypeArguments="x:Int32">[out_PendingCount]</OutArgument>
+      </mca:Assign.To>
+      <mca:Assign.Value>
+        <InArgument x:TypeArguments="x:Int32">[dtPendingList.Rows.Count]</InArgument>
+      </mca:Assign.Value>
+    </mca:Assign>
+
+    <ui:LogMessage DisplayName="Log Result" Level="Info"
+      Message="[&quot;Fee tracker complete. Pending students: &quot; + out_PendingCount.ToString]" />
+
+  </mca:Sequence>
+</Activity>
